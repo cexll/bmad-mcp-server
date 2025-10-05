@@ -52,38 +52,105 @@ bmad-mcp: merges, scores, saves, advances to next stage
 | **Review** | Code Reviewer | Codex | Code review |
 | **QA** | QA Engineer | Codex | Testing and quality assurance |
 
-## 🚀 Installation
+## 🚀 Quick Start
 
-### NPM Install (Recommended)
+### Installation (3 Steps)
+
+```bash
+# Step 1: Install globally from npm
+npm install -g bmad-mcp
+
+# Step 2: Add to Claude Code
+claude mcp add-json --scope user bmad '{"type":"stdio","command":"bmad-mcp"}'
+
+# Step 3: Verify installation
+bmad-mcp
+# Expected output: "BMAD MCP Server running on stdio"
+```
+
+**That's it!** Restart Claude Code and you're ready to use BMAD workflow.
+
+### Usage Example
+
+Simply tell Claude Code to use BMAD:
+
+```
+User: Use bmad-task to create a user authentication system
+
+Claude Code will:
+1. Start BMAD workflow (PO stage)
+2. Generate Product Requirements Document (with interactive Q&A)
+3. Generate System Architecture (with interactive Q&A)
+4. Create Sprint Plan
+5. Implement code (using Codex)
+6. Perform code review
+7. Run quality assurance tests
+
+All artifacts saved to: .claude/specs/user-authentication-system/
+```
+
+### Configuration Location
+
+MCP configuration is automatically added to `~/.claude/config.json`:
+
+```json
+{
+  "mcpServers": {
+    "bmad": {
+      "type": "stdio",
+      "command": "bmad-mcp"
+    }
+  }
+}
+```
+
+---
+
+## 🔧 Advanced Installation
+
+### Option 1: NPM Install (Recommended)
 
 ```bash
 npm install -g bmad-mcp
+claude mcp add-json --scope user bmad '{"type":"stdio","command":"bmad-mcp"}'
 ```
 
-### Build from Source
+### Option 2: Build from Source
 
 ```bash
 git clone https://github.com/cexll/bmad-mcp-server
 cd bmad-mcp-server
 npm install
 npm run build
-npm link  # or: npm install -g .
-```
+npm link  # Makes bmad-mcp globally available
 
-## 🔧 Setup
-
-### Add to Claude Code
-
-```bash
-claude mcp add-json --scope user bmad-task '{"type":"stdio","command":"bmad-mcp"}'
+# Add to Claude Code
+claude mcp add-json --scope user bmad '{"type":"stdio","command":"bmad-mcp"}'
 ```
 
 ### Verify Installation
 
 ```bash
-# Test the server
+# Check if binary is available
+which bmad-mcp
+# Output: /usr/local/bin/bmad-mcp (or similar)
+
+# Test the server directly
 bmad-mcp
-# Should output: "BMAD MCP Server running on stdio"
+# Expected output: "BMAD MCP Server running on stdio"
+# Press Ctrl+C to exit
+
+# Restart Claude Code to load the configuration
+```
+
+### Uninstall
+
+```bash
+# Remove from Claude Code
+claude mcp remove bmad
+
+# Uninstall npm package
+npm uninstall -g bmad-mcp
 ```
 
 ## 📖 Usage
@@ -263,17 +330,27 @@ await callTool("bmad-task", {
 }
 ```
 
-**Returns**:
+**Returns** (when entering Dev stage):
 ```json
 {
   "session_id": "uuid",
   "stage": "dev",
   "state": "generating",
+  "requires_user_confirmation": true,
+  "interaction_type": "awaiting_generation",
+  "user_message": "✅ **Sprint Plan 已批准**\n\n正在进入下一阶段：Developer - Implementation\n\nSprint Plan 包含 3 个 Sprint：\n1. Sprint 1: 基础架构\n2. Sprint 2: 核心功能\n3. Sprint 3: 优化和完善\n\n⚠️ 重要：请明确指示开发范围...",
   "role_prompt": "<dev prompt>",
   "engines": ["codex"],
-  "pending_user_actions": ["review_and_confirm_generation"]
+  "pending_user_actions": ["specify_sprint_scope_then_generate"]
 }
 ```
+
+**Important - Dev Stage Behavior**:
+- After approving Sprint Plan, workflow enters Dev stage but **does NOT auto-start development**
+- User must explicitly specify development scope:
+  - **"开始开发" / "start development"** → Implements ALL sprints (default)
+  - **"开发 Sprint 1" / "implement sprint 1"** → Implements only Sprint 1
+- This ensures users have full control over what gets implemented and when
 
 #### `status` - Query workflow status
 
