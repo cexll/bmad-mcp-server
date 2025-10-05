@@ -1,0 +1,48 @@
+{
+  "name": "bmad-mcp",
+  "version": "0.1.0",
+  "description": "BMAD (Business-Minded Agile Development) MCP Server - Complete agile workflow orchestrator",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "bmad-mcp": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "bmad",
+    "agile",
+    "workflow",
+    "development",
+    "orchestrator",
+    "claude",
+    "codex"
+  ],
+  "author": "evanxian9@gmail.com",
+  "license": "MIT",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cexll/bmad-mcp-server.git"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
