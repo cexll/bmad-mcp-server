@@ -4,6 +4,11 @@
 
 Complete agile development workflow: **PO → Architect → SM → Dev → Review → QA**
 
+**Interactive Requirements Gathering** - Asks clarifying questions to ensure complete requirements
+**Dynamic Engine Selection** - Uses Claude by default, dual-engine when needed
+**Content Reference System** - Efficient token usage via file references
+**Human-Readable Task Names** - Organizes by task name, not UUID
+
 ---
 
 ## 🎯 What is BMAD-MCP?
@@ -58,8 +63,8 @@ npm install -g bmad-mcp
 ### Build from Source
 
 ```bash
-git clone https://github.com/your-repo/bmad-mcp
-cd bmad-mcp
+git clone https://github.com/cexll/bmad-mcp-server
+cd bmad-mcp-server
 npm install
 npm run build
 npm link  # or: npm install -g .
@@ -70,7 +75,7 @@ npm link  # or: npm install -g .
 ### Add to Claude Code
 
 ```bash
-claude mcp add-json --scope user bmad '{"type":"stdio","command":"bmad-mcp"}'
+claude mcp add-json --scope user bmad-task '{"type":"stdio","command":"bmad-mcp"}'
 ```
 
 ### Verify Installation
@@ -87,13 +92,13 @@ bmad-mcp
 
 ```typescript
 // 1. Start workflow
-const startResult = await callTool("bmad", {
+const startResult = await callTool("bmad-task", {
   action: "start",
   cwd: "/path/to/your/project",
   objective: "Implement user login system"
 });
 
-const { session_id, role_prompt, engines } = JSON.parse(startResult.content[0].text);
+const { session_id, task_name, role_prompt, engines } = JSON.parse(startResult.content[0].text);
 
 // 2. Execute with engines
 if (engines.includes("claude")) {
@@ -104,7 +109,7 @@ if (engines.includes("codex")) {
 }
 
 // 3. Submit results
-await callTool("bmad", {
+await callTool("bmad-task", {
   action: "submit",
   session_id: session_id,
   stage: "po",
@@ -112,11 +117,11 @@ await callTool("bmad", {
   codex_result: codexResult
 });
 
-// 4. Approve and continue
-await callTool("bmad", {
-  action: "approve",
+// 4. Confirm and proceed (unified: saves + advances to next stage)
+await callTool("bmad-task", {
+  action: "confirm",
   session_id: session_id,
-  approved: true
+  confirmed: true
 });
 ```
 
@@ -136,11 +141,17 @@ await callTool("bmad", {
 ```json
 {
   "session_id": "uuid",
+  "task_name": "project-description",
   "stage": "po",
+  "state": "generating",
+  "stage_description": "Product Owner - Requirements Analysis",
+  "requires_user_confirmation": true,
+  "interaction_type": "awaiting_generation",
+  "user_message": "📋 **BMAD 工作流已启动**...",
   "role_prompt": "<complete prompt>",
-  "engines": ["claude", "codex"],
+  "engines": ["claude"],
   "context": {...},
-  "next_action": "generate_prd"
+  "pending_user_actions": ["review_and_confirm_generation"]
 }
 ```
 
@@ -161,26 +172,88 @@ await callTool("bmad", {
 {
   "session_id": "uuid",
   "stage": "po",
-  "state": "awaiting_approval",
+  "state": "awaiting_confirmation",
   "score": 92,
-  "artifact_path": ".claude/specs/uuid/01-product-requirements.md",
-  "next_action": "user_approval"
+  "requires_user_confirmation": true,
+  "interaction_type": "user_decision",
+  "user_message": "✅ **PRD生成完成**\n质量评分：92/100...",
+  "final_draft_summary": "...",
+  "final_draft_file": ".bmad-task/temp/uuid/po_final_result_xxx.md",
+  "pending_user_actions": ["confirm", "reject_and_refine"]
 }
 ```
 
-**Returns** (if score < 90):
+**Returns** (if score < 90 with clarification questions):
+```json
+{
+  "session_id": "uuid",
+  "stage": "po",
+  "state": "clarifying",
+  "current_score": 75,
+  "requires_user_confirmation": true,
+  "interaction_type": "user_decision",
+  "user_message": "⚠️ **需求澄清...**",
+  "gaps": ["Target user group unclear", "..."],
+  "questions": [{"id": "q1", "question": "...", "context": "..."}],
+  "pending_user_actions": ["answer_questions"]
+}
+```
+
+#### `confirm` - Confirm and save (unified action)
+
+```json
+{
+  "action": "confirm",
+  "session_id": "uuid",
+  "confirmed": true
+}
+```
+
+**Returns** (saves artifact + advances to next stage):
+```json
+{
+  "session_id": "uuid",
+  "stage": "architect",
+  "state": "generating",
+  "requires_user_confirmation": true,
+  "interaction_type": "awaiting_generation",
+  "user_message": "💾 **文档已保存，并已进入下一阶段**...",
+  "role_prompt": "<architect prompt>",
+  "engines": ["claude"],
+  "previous_artifact": ".claude/specs/task-name/01-product-requirements.md",
+  "pending_user_actions": ["review_and_confirm_generation"]
+}
+```
+
+#### `answer` - Answer clarification questions
+
+```json
+{
+  "action": "answer",
+  "session_id": "uuid",
+  "answers": {
+    "q1": "Target users are enterprise B2B customers",
+    "q2": "Expected 10k concurrent users with <200ms response time"
+  }
+}
+```
+
+**Returns**:
 ```json
 {
   "session_id": "uuid",
   "stage": "po",
   "state": "refining",
-  "current_score": 75,
-  "iteration": 2,
-  "next_action": "regenerate"
+  "requires_user_confirmation": true,
+  "interaction_type": "awaiting_regeneration",
+  "user_message": "📝 **已收到你的回答**...",
+  "role_prompt": "<updated prompt with user answers>",
+  "engines": ["claude"],
+  "pending_user_actions": ["regenerate_with_answers"]
 }
 ```
 
-#### `approve` - Approve current stage
+#### `approve` - Approve current stage (SM stage only)
 
 ```json
 {
@@ -194,10 +267,11 @@ await callTool("bmad", {
 ```json
 {
   "session_id": "uuid",
-  "stage": "architect",
-  "role_prompt": "<architect prompt>",
-  "engines": ["claude", "codex"],
-  "next_action": "generate_architecture"
+  "stage": "dev",
+  "state": "generating",
+  "role_prompt": "<dev prompt>",
+  "engines": ["codex"],
+  "pending_user_actions": ["review_and_confirm_generation"]
 }
 ```
 
@@ -228,10 +302,16 @@ await callTool("bmad", {
 ```
 your-project/
 ├── .bmad-task/
-│   └── session-abc-123.json          # Workflow state
+│   ├── session-abc-123.json          # Workflow state (with content references)
+│   ├── task-mapping.json             # Maps session_id → task_name
+│   └── temp/
+│       └── abc-123/                  # Temporary content files
+│           ├── po_claude_result_xxx.md
+│           ├── po_codex_result_xxx.md
+│           └── po_final_result_xxx.md
 ├── .claude/
 │   └── specs/
-│       └── abc-123/                  # Session artifacts
+│       └── implement-user-login/     # Task name (human-readable slug)
 │           ├── 01-product-requirements.md
 │           ├── 02-system-architecture.md
 │           ├── 03-sprint-plan.md
@@ -245,6 +325,7 @@ your-project/
 ```json
 {
   "session_id": "abc-123",
+  "task_name": "implement-user-login",
   "cwd": "/path/to/project",
   "objective": "Implement user login",
   "current_stage": "dev",
@@ -252,28 +333,40 @@ your-project/
   "stages": {
     "po": {
       "status": "completed",
-      "claude_result": "...",
-      "codex_result": "...",
-      "final_result": "...",
+      "claude_result_ref": {
+        "summary": "First 300 chars...",
+        "file_path": ".bmad-task/temp/abc-123/po_claude_result_xxx.md",
+        "size": 12450,
+        "last_updated": "2025-01-15T10:30:00Z"
+      },
+      "final_result_ref": {...},
       "score": 92,
       "approved": true
     },
     ...
   },
-  "artifacts": [...]
+  "artifacts": [".claude/specs/implement-user-login/01-product-requirements.md", ...]
 }
 ```
 
 ## 🎨 Engine Configuration
 
-### PO & Architect Stages (Dual Engine)
+### PO & Architect Stages (Dynamic Engine Selection)
 
-- Calls both Claude and Codex
-- Each generates independent solution
-- BMAD-MCP merges results:
-  - If both ≥ 90: choose higher score
-  - If one ≥ 90: choose that one
-  - If both < 90: choose higher score, refine
+- **Default**: Only Claude (single engine)
+- **Dual Engine**: Enabled when objective contains "codex" or "使用 codex"
+- If dual engine enabled:
+  - Calls both Claude and Codex
+  - Each generates independent solution
+  - BMAD-MCP merges results:
+    - If both ≥ 90: choose higher score
+    - If one ≥ 90: choose that one
+    - If both < 90: choose higher score, refine
+- **Interactive Clarification**:
+  - First iteration: Identify gaps, generate 3-5 clarification questions
+  - User answers questions
+  - Regenerate based on answers
+  - Iterate until score ≥ 90
 
 ### SM Stage (Claude Only)
 
@@ -284,8 +377,9 @@ your-project/
 
 - Only calls Codex MCP
 - Uses GPT-5 for code tasks
+- **Important**: Use `model: "gpt-5"` (NOT "gpt-5-codex")
 - Parameters:
-  - `model: "gpt-5-codex"`
+  - `model: "gpt-5"`
   - `sandbox: "danger-full-access"`
   - `approval-policy: "on-failure"`
 
@@ -293,20 +387,27 @@ your-project/
 
 ```mermaid
 graph TD
-    A[Start] --> B[PO Stage]
-    B --> C{Score >= 90?}
-    C -->|No| B
-    C -->|Yes| D[User Approval]
-    D -->|Approved| E[Architect Stage]
+    A[Start] --> B[PO Stage: Generate]
+    B --> C{Has Questions?}
+    C -->|Yes| D[Clarifying: User Answers]
+    D --> E[Refining: Regenerate]
     E --> F{Score >= 90?}
-    F -->|No| E
-    F -->|Yes| G[User Approval]
-    G -->|Approved| H[SM Stage]
-    H --> I[User Approval]
-    I -->|Approved| J[Dev Stage]
-    J --> K[Review Stage]
-    K --> L[QA Stage]
-    L --> M[Complete]
+    C -->|No| F
+    F -->|No| C
+    F -->|Yes| G[Awaiting Confirmation]
+    G -->|confirm| H[Saved + Architect Stage]
+    H --> I{Has Questions?}
+    I -->|Yes| J[Clarifying: User Answers]
+    J --> K[Refining: Regenerate]
+    K --> L{Score >= 90?}
+    I -->|No| L
+    L -->|No| I
+    L -->|Yes| M[Awaiting Confirmation]
+    M -->|confirm| N[Saved + SM Stage]
+    N -->|approve| O[Dev Stage]
+    O --> P[Review Stage]
+    P --> Q[QA Stage]
+    Q --> R[Complete]
 ```
 
 ## 🛠️ Development
@@ -359,8 +460,8 @@ When calling Codex for Dev/Review/QA stages:
 ```typescript
 // Claude Code calls Codex MCP
 await callTool("codex", {
-  prompt: role_prompt,  // From bmad-mcp
-  model: "gpt-5-codex",
+  prompt: role_prompt,  // From bmad-task
+  model: "gpt-5",  // IMPORTANT: Use "gpt-5", NOT "gpt-5-codex"
   sandbox: "danger-full-access",
   "approval-policy": "on-failure"
 });
@@ -408,6 +509,12 @@ which bmad-mcp
 bmad-mcp
 ```
 
+### Tool name error
+
+- **Important**: The tool name is `bmad-task`, not `bmad`
+- Use `callTool("bmad-task", {...})` in your code
+- Claude Code configuration should use `bmad-task` as the tool name
+
 ### Session not found
 
 - Ensure `.bmad-task/` directory has write permissions
@@ -416,8 +523,15 @@ bmad-mcp
 
 ### Scores not detected
 
-- Ensure generated content includes: `Quality Score: X/100`
-- Check score format matches pattern
+- Ensure generated content includes: `Quality Score: X/100` or `"quality_score": 92` in JSON
+- Check score format matches pattern (0-100)
+- Score ≥ 90 required for PO/Architect stages to advance
+
+### Clarification workflow issues
+
+- If you see `state: "clarifying"`, user must answer questions via `answer` action
+- Do NOT auto-generate answers - wait for real user input
+- Check `requires_user_confirmation: true` before proceeding
 
 ## 📝 License
 
