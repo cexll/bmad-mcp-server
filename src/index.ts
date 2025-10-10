@@ -2232,7 +2232,205 @@ bmad-task action=answer session_id=${session.session_id} answers={"q1":"...","q2
   }
 
   /**
-   * 构建阶段上下文
+   * 从 PRD 提取技术栈信息
+   */
+  private extractTechStack(content: string): string[] {
+    const techStack: string[] = [];
+    const lowerContent = content.toLowerCase();
+
+    // 匹配技术栈章节
+    const techStackMatch = content.match(/(?:技术栈|tech stack|technology stack)[:\s]*([\s\S]*?)(?=\n#|$)/i);
+    if (techStackMatch) {
+      const section = techStackMatch[1];
+      // 提取列表项
+      const items = section.match(/[-*]\s*([^\n]+)/g);
+      if (items) {
+        techStack.push(...items.map(item => item.replace(/^[-*]\s*/, '').trim()));
+      }
+    }
+
+    // 回退：搜索常见技术关键词
+    const commonTech = ['Node.js', 'TypeScript', 'JavaScript', 'Python', 'Go', 'Rust', 'PostgreSQL', 'MySQL', 'MongoDB', 'Redis', 'React', 'Vue', 'Angular', 'Express', 'FastAPI', 'Django'];
+    for (const tech of commonTech) {
+      if (lowerContent.includes(tech.toLowerCase()) && !techStack.includes(tech)) {
+        techStack.push(tech);
+      }
+    }
+
+    return techStack.slice(0, 10); // 限制数量
+  }
+
+  /**
+   * 从 PRD 提取核心功能列表
+   */
+  private extractKeyFeatures(content: string): string[] {
+    const features: string[] = [];
+
+    // 匹配功能需求章节
+    const featuresMatch = content.match(/(?:functional requirements|功能需求|core features)[:\s]*([\s\S]*?)(?=\n#|$)/i);
+    if (featuresMatch) {
+      const section = featuresMatch[1];
+      const items = section.match(/[-*]\s*([^\n]+)/g);
+      if (items) {
+        features.push(...items.map(item => item.replace(/^[-*]\s*/, '').trim()).slice(0, 8));
+      }
+    }
+
+    return features;
+  }
+
+  /**
+   * 从 PRD 提取 API 端点
+   */
+  private extractAPIs(content: string): string[] {
+    const apis: string[] = [];
+
+    // 匹配 API 路径（/api/xxx 格式）
+    const apiMatches = content.match(/\/api\/[\w/-]+/g);
+    if (apiMatches) {
+      const unique = Array.from(new Set(apiMatches));
+      apis.push(...unique.slice(0, 15));
+    }
+
+    return apis;
+  }
+
+  /**
+   * 从 PRD 提取依赖清单
+   */
+  private extractDependencies(content: string): string[] {
+    const deps: string[] = [];
+
+    // 匹配依赖章节
+    const depsMatch = content.match(/(?:dependencies|依赖)[:\s]*([\s\S]*?)(?=\n#|$)/i);
+    if (depsMatch) {
+      const section = depsMatch[1];
+      const items = section.match(/[-*]\s*([^\n]+)/g);
+      if (items) {
+        deps.push(...items.map(item => item.replace(/^[-*]\s*/, '').trim()).slice(0, 10));
+      }
+    }
+
+    return deps;
+  }
+
+  /**
+   * 从架构文档提取组件列表
+   */
+  private extractComponents(content: string): string[] {
+    const components: string[] = [];
+
+    // 匹配组件章节
+    const componentMatch = content.match(/(?:components|组件|architecture)[:\s]*([\s\S]*?)(?=\n#|$)/i);
+    if (componentMatch) {
+      const section = componentMatch[1];
+      const items = section.match(/[-*]\s*([^\n]+)/g);
+      if (items) {
+        components.push(...items.map(item => item.replace(/^[-*]\s*/, '').trim()).slice(0, 10));
+      }
+    }
+
+    return components;
+  }
+
+  /**
+   * 从架构文档提取数据模型
+   */
+  private extractDataModels(content: string): string[] {
+    const models: string[] = [];
+
+    // 匹配数据模型章节
+    const modelMatch = content.match(/(?:data models?|数据模型|entities)[:\s]*([\s\S]*?)(?=\n#|$)/i);
+    if (modelMatch) {
+      const section = modelMatch[1];
+      const items = section.match(/[-*]\s*([^\n]+)/g);
+      if (items) {
+        models.push(...items.map(item => item.replace(/^[-*]\s*/, '').trim()).slice(0, 10));
+      }
+    }
+
+    return models;
+  }
+
+  /**
+   * 从架构文档提取 API 契约摘要
+   */
+  private extractAPIContracts(content: string): any {
+    const contracts: any = {
+      endpoints_count: 0,
+      sample_endpoints: []
+    };
+
+    // 计算 API 端点数量
+    const apiMatches = content.match(/\/api\/[\w/-]+/g);
+    if (apiMatches) {
+      contracts.endpoints_count = new Set(apiMatches).size;
+      contracts.sample_endpoints = Array.from(new Set(apiMatches)).slice(0, 5);
+    }
+
+    return contracts;
+  }
+
+  /**
+   * 从 Sprint Plan 提取 Sprint 数量
+   */
+  private extractSprintsCount(content: string): number {
+    const sprintMatches = content.match(/## Sprint \d+/g);
+    return sprintMatches ? sprintMatches.length : 0;
+  }
+
+  /**
+   * 从 Sprint Plan 提取当前 Sprint 任务（默认 Sprint 1）
+   */
+  private extractCurrentSprintTasks(content: string): string[] {
+    const tasks: string[] = [];
+
+    // 提取 Sprint 1 的任务
+    const sprint1Match = content.match(/## Sprint 1[:\s]*([\s\S]*?)(?=## Sprint \d+|$)/i);
+    if (sprint1Match) {
+      const section = sprint1Match[1];
+      const items = section.match(/[-*]\s*([^\n]+)/g);
+      if (items) {
+        tasks.push(...items.map(item => item.replace(/^[-*]\s*/, '').trim()).slice(0, 8));
+      }
+    }
+
+    return tasks;
+  }
+
+  /**
+   * 智能提取上下文摘要（根据阶段类型）
+   */
+  private extractContextSummary(stage: WorkflowStage, content: string): any {
+    switch (stage) {
+      case 'po':
+        return {
+          tech_stack: this.extractTechStack(content),
+          key_features: this.extractKeyFeatures(content),
+          api_endpoints: this.extractAPIs(content),
+          dependencies: this.extractDependencies(content)
+        };
+
+      case 'architect':
+        return {
+          components: this.extractComponents(content),
+          data_models: this.extractDataModels(content),
+          api_contracts: this.extractAPIContracts(content)
+        };
+
+      case 'sm':
+        return {
+          sprints_count: this.extractSprintsCount(content),
+          current_sprint_tasks: this.extractCurrentSprintTasks(content)
+        };
+
+      default:
+        return {};
+    }
+  }
+
+  /**
+   * 构建阶段上下文（优化版：dev/review/qa 使用引用+摘要，避免 token 超限）
    */
   private buildStageContext(
     session: WorkflowSession,
@@ -2242,6 +2440,9 @@ bmad-task action=answer session_id=${session.session_id} answers={"q1":"...","q2
       objective: session.objective,
     };
 
+    // 判断是否需要 token 优化（dev/review/qa 阶段需要大量上下文）
+    const needsOptimization = ['dev', 'review', 'qa'].includes(stage);
+
     // 包含之前阶段的结果
     if (stage !== "po") {
       const previousStages = WORKFLOW_DEFINITION.stages.slice(
@@ -2249,14 +2450,38 @@ bmad-task action=answer session_id=${session.session_id} answers={"q1":"...","q2
         WORKFLOW_DEFINITION.stages.indexOf(stage)
       );
 
-      for (const prevStage of previousStages) {
-        const stageData = session.stages[prevStage];
-        if (stageData.final_result_ref) {
-          // 从引用读取完整内容
-          context[prevStage] = this.readContentFromFile(
-            session.cwd,
-            stageData.final_result_ref
-          );
+      if (needsOptimization) {
+        // 优化模式：返回引用 + 摘要（节省 token）
+        const context_refs: Record<string, ContentReference> = {};
+        const context_summary: Record<string, any> = {};
+
+        for (const prevStage of previousStages) {
+          const stageData = session.stages[prevStage];
+          if (stageData.final_result_ref) {
+            // 保存引用
+            context_refs[prevStage] = stageData.final_result_ref;
+
+            // 读取内容并提取摘要
+            const content = this.readContentFromFile(
+              session.cwd,
+              stageData.final_result_ref
+            );
+            context_summary[prevStage] = this.extractContextSummary(prevStage, content);
+          }
+        }
+
+        context.context_refs = context_refs;
+        context.context_summary = context_summary;
+      } else {
+        // 原有模式：返回完整内容（PO/Architect/SM 阶段）
+        for (const prevStage of previousStages) {
+          const stageData = session.stages[prevStage];
+          if (stageData.final_result_ref) {
+            context[prevStage] = this.readContentFromFile(
+              session.cwd,
+              stageData.final_result_ref
+            );
+          }
         }
       }
     }
